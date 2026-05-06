@@ -1,0 +1,19 @@
+{
+  "billed_to": {
+    "company": "ACME PTY LTD",
+    "region": "State, Country",
+    "email": "billing@example.com"
+  },
+  "from": {
+    "name": "Your Name",
+    "abn": "00000000000",
+    "address1": "123 Example St",
+    "address2": "Suburb",
+    "postcode": "0000"
+  },
+  "bank": {
+    "name": "Your Full Name",
+    "bsb": "000-000",
+    "account": "0000 0000"
+  }
+}

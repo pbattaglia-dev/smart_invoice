@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smart Invoice</title>
+<style>
+:root {
+  --bg: #f5f5f7;
+  --surface: #ffffff;
+  --surface2: #f0f0f3;
+  --border: #e0e0e6;
+  --text: #1a1d27;
+  --text2: #6b7085;
+  --accent: #7c5cfc;
+  --accent2: #5ce0d8;
+  --success: #4ade80;
+  --error: #f87171;
+  --glow: rgba(124, 92, 252, 0.08);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  transition: background 0.3s, color 0.3s;
+}
+
+.container { max-width: 720px; margin: 0 auto; padding: 40px 20px 60px; }
+
+header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 36px;
+}
+.logo { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; }
+.logo span { background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.subtitle { color: var(--text2); font-size: 13px; margin-top: 2px; }
+/* Upload zone */
+.upload-zone {
+  border: 2px dashed var(--border);
+  border-radius: 16px;
+  padding: 48px 24px;
+  text-align: center;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  background: var(--surface);
+}
+.upload-zone::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  opacity: 0; transition: opacity 0.3s;
+  border-radius: 14px;
+}
+.upload-zone.dragover { border-color: var(--accent); transform: scale(1.01); }
+.upload-zone.dragover::before { opacity: 0.05; }
+.upload-zone.has-file { border-color: var(--success); border-style: solid; }
+.upload-icon { font-size: 40px; margin-bottom: 12px; position: relative; }
+.upload-text { color: var(--text2); font-size: 14px; position: relative; }
+.upload-text strong { color: var(--text); }
+.file-name {
+  color: var(--success); font-weight: 600; font-size: 14px;
+  margin-top: 8px; position: relative;
+}
+.upload-zone input { display: none; }
+
+/* Sections */
+.section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 24px;
+  margin-top: 20px;
+  opacity: 0;
+  transform: translateY(12px);
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.section.visible { opacity: 1; transform: translateY(0); }
+.section-title {
+  font-size: 13px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.5px; color: var(--text2); margin-bottom: 16px;
+}
+
+/* Preview table */
+.preview-table {
+  width: 100%; border-collapse: collapse; font-size: 13px;
+}
+.preview-table th {
+  text-align: left; color: var(--text2); font-weight: 500;
+  padding: 6px 8px; border-bottom: 1px solid var(--border);
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.3px;
+}
+.preview-table td {
+  padding: 8px; border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.preview-table tr { opacity: 0; animation: fadeRow 0.3s ease forwards; }
+.preview-table .desc-cell { max-width: 380px; }
+.preview-table .num-cell { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.desc-edit {
+  width: 100%; border: 1px solid transparent; border-radius: 4px;
+  background: transparent; color: var(--text); font: inherit; font-size: 13px;
+  padding: 4px 6px; resize: vertical; min-height: 24px;
+  transition: border-color 0.2s, background 0.2s;
+  field-sizing: content;
+}
+.desc-edit:hover { border-color: var(--border); }
+.desc-edit:focus {
+  outline: none; border-color: var(--accent); background: var(--surface2);
+  box-shadow: 0 0 0 2px var(--glow);
+}
+@keyframes fadeRow { to { opacity: 1; } }
+
+.stats {
+  display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;
+}
+.stat {
+  background: var(--surface2); border-radius: 8px; padding: 8px 14px;
+  font-size: 13px;
+}
+.stat strong { color: var(--accent); }
+
+/* Form */
+.form-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+}
+.form-group { display: flex; flex-direction: column; gap: 4px; }
+.form-group.full { grid-column: 1 / -1; }
+.form-group label {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px;
+  color: var(--text2); font-weight: 600;
+}
+.form-group input, .form-group textarea {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px 12px; color: var(--text);
+  font-size: 14px; font-family: inherit;
+  transition: border-color 0.2s;
+}
+.form-group input:focus, .form-group textarea:focus {
+  outline: none; border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--glow);
+}
+.form-group textarea { resize: vertical; min-height: 48px; }
+
+/* Generate button */
+.generate-btn {
+  width: 100%; margin-top: 24px; padding: 14px;
+  border: none; border-radius: 12px; cursor: pointer;
+  font-size: 16px; font-weight: 700; font-family: inherit;
+  color: white; position: relative; overflow: hidden;
+  background: linear-gradient(135deg, var(--accent), #9b6dff, var(--accent2));
+  background-size: 200% 200%;
+  animation: gradientShift 3s ease infinite;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.generate-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 24px rgba(124, 92, 252, 0.3);
+}
+.generate-btn:active { transform: translateY(0); }
+.generate-btn:disabled {
+  opacity: 0.5; cursor: not-allowed; transform: none;
+  box-shadow: none; animation: none;
+}
+@keyframes gradientShift {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+/* Toast */
+.toast {
+  position: fixed; bottom: 24px; right: 24px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 14px 20px;
+  font-size: 14px; box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+  transform: translateY(100px); opacity: 0;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 100;
+}
+.toast.show { transform: translateY(0); opacity: 1; }
+.toast.success { border-color: var(--success); }
+.toast.error { border-color: var(--error); }
+
+/* Confetti canvas */
+#confetti { position: fixed; inset: 0; pointer-events: none; z-index: 99; }
+
+.content-tag {
+  display: inline-block; font-size: 10px; font-weight: 600;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  color: white; border-radius: 4px; padding: 1px 6px; margin-left: 6px;
+  vertical-align: middle; letter-spacing: 0.3px;
+}
+.preview-table tr.content-row { background: var(--glow); }
+
+.footer {
+  text-align: center; margin-top: 48px; color: var(--text2);
+  font-size: 12px; opacity: 0.6;
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div>
+      <div class="logo"><span>Smart Invoice</span></div>
+      <div class="subtitle">Turn your time into money</div>
+    </div>
+  </header>
+
+  <div class="upload-zone" id="dropZone" onclick="fileInput.click()">
+    <div class="upload-icon">&#128196;</div>
+    <div class="upload-text">
+      <strong>Drop your Toggl PDF here</strong><br>or click to browse
+    </div>
+    <div class="file-name" id="fileName"></div>
+    <input type="file" id="fileInput" accept=".pdf">
+  </div>
+
+  <div class="section" id="previewSection">
+    <div class="section-title">Parsed Time Entries</div>
+    <div class="stats" id="stats"></div>
+    <div style="overflow-x: auto;">
+      <table class="preview-table">
+        <thead><tr><th>Date</th><th>Description</th><th style="text-align:right">Hours</th></tr></thead>
+        <tbody id="previewBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="section" id="configSection">
+    <div class="section-title">Invoice Details</div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Invoice Number</label>
+        <input type="text" id="invoiceNumber" placeholder="e.g. 052026">
+      </div>
+      <div class="form-group">
+        <label>Purchase Order</label>
+        <input type="text" id="purchaseOrder" placeholder="e.g. 11">
+      </div>
+      <div class="form-group">
+        <label>Date of Issue</label>
+        <input type="date" id="dateOfIssue">
+      </div>
+      <div class="form-group">
+        <label>Due Date</label>
+        <input type="date" id="dueDate">
+      </div>
+      <div class="form-group">
+        <label>Hourly Rate (AU$)</label>
+        <input type="number" id="hourlyRate" value="35" step="0.01" min="0">
+      </div>
+      <div class="form-group">
+        <label>Total (auto-calculated)</label>
+        <input type="text" id="totalPreview" readonly style="opacity: 0.7;">
+        <div id="totalBreakdown" style="font-size: 11px; color: var(--text2); margin-top: 2px;"></div>
+      </div>
+      <div class="form-group full">
+        <label>Services Summary (for Terms section)</label>
+        <textarea id="servicesSummary" placeholder="e.g. Email marketing, ads, banners, infographics"></textarea>
+      </div>
+    </div>
+    <button class="generate-btn" id="generateBtn" onclick="generateInvoice()">
+      Generate Invoice PDF
+    </button>
+  </div>
+
+  <div class="footer">Smart Invoice</div>
+</div>
+
+<canvas id="confetti"></canvas>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+const fileName = document.getElementById('fileName');
+const previewSection = document.getElementById('previewSection');
+const configSection = document.getElementById('configSection');
+const previewBody = document.getElementById('previewBody');
+const stats = document.getElementById('stats');
+const generateBtn = document.getElementById('generateBtn');
+
+let uploadedFile = null;
+let parsedData = null;
+
+// Drag and drop
+['dragenter', 'dragover'].forEach(e => {
+  dropZone.addEventListener(e, ev => { ev.preventDefault(); dropZone.classList.add('dragover'); });
+});
+['dragleave', 'drop'].forEach(e => {
+  dropZone.addEventListener(e, ev => { ev.preventDefault(); dropZone.classList.remove('dragover'); });
+});
+dropZone.addEventListener('drop', ev => {
+  const file = ev.dataTransfer.files[0];
+  if (file && file.type === 'application/pdf') handleFile(file);
+  else showToast('Please drop a PDF file', 'error');
+});
+fileInput.addEventListener('change', () => {
+  if (fileInput.files[0]) handleFile(fileInput.files[0]);
+});
+
+async function handleFile(file) {
+  uploadedFile = file;
+  fileName.textContent = file.name;
+  dropZone.classList.add('has-file');
+
+  const form = new FormData();
+  form.append('file', file);
+
+  try {
+    const res = await fetch('/parse', { method: 'POST', body: form });
+    const data = await res.json();
+    if (data.error) { showToast(data.error, 'error'); return; }
+    parsedData = data;
+    renderPreview(data);
+    showToast('PDF parsed successfully!', 'success');
+  } catch (e) {
+    showToast('Failed to parse PDF', 'error');
+  }
+}
+
+function renderPreview(data) {
+  stats.innerHTML = `
+    <div class="stat"><strong>${data.entry_count}</strong> time entries</div>
+    <div class="stat"><strong>${data.line_items.length}</strong> work days</div>
+    <div class="stat"><strong>${data.total_hours}</strong> total</div>
+    <div class="stat"><strong>${data.date_range_start || '?'}</strong> to <strong>${data.date_range_end || '?'}</strong></div>
+  `;
+
+  previewBody.innerHTML = '';
+  const seenTags = new Set();
+  let tagNum = 0;
+  data.line_items.forEach((item, i) => {
+    if (item.tag && !seenTags.has(item.tag)) {
+      seenTags.add(item.tag);
+      tagNum++;
+      const sep = document.createElement('tr');
+      sep.className = 'section-separator';
+      sep.innerHTML = `<td colspan="3" style="padding:12px 8px 6px; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.4px; color:var(--text2); border-bottom:2px solid var(--accent);">${tagNum}. ${escapeHtml(item.tag.toUpperCase())}</td>`;
+      sep.style.animationDelay = `${i * 50}ms`;
+      previewBody.appendChild(sep);
+    }
+    const tr = document.createElement('tr');
+    tr.style.animationDelay = `${i * 50}ms`;
+    if (item.tag) tr.classList.add('content-row');
+    const badge = item.tag ? `<span class="content-tag">${escapeHtml(item.tag)}</span>` : '';
+    tr.innerHTML = `
+      <td style="white-space:nowrap; font-weight:500;">${item.date_label}${badge}</td>
+      <td class="desc-cell"><textarea class="desc-edit" data-index="${i}">${escapeHtml(item.description)}</textarea></td>
+      <td class="num-cell">${item.qty_hours}</td>
+    `;
+    previewBody.appendChild(tr);
+  });
+
+  previewSection.classList.add('visible');
+  setTimeout(() => configSection.classList.add('visible'), 200);
+
+  // Auto-fill defaults
+  const today = new Date();
+  document.getElementById('dateOfIssue').value = fmt(today);
+  const due = new Date(today);
+  due.setDate(due.getDate() + 7);
+  document.getElementById('dueDate').value = fmt(due);
+
+  if (data.date_range_end) {
+    const parts = data.date_range_end.split('-');
+    document.getElementById('invoiceNumber').value = parts[1] + parts[0];
+  }
+
+  updateTotal();
+}
+
+function fmt(d) {
+  return d.toISOString().split('T')[0];
+}
+
+function fmtDisplay(dateStr) {
+  const [y, m, d] = dateStr.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+function updateTotal() {
+  if (!parsedData) return;
+  const rate = parseFloat(document.getElementById('hourlyRate').value) || 0;
+  const tagTotals = {};
+  parsedData.line_items.forEach(item => {
+    const key = item.tag || '';
+    tagTotals[key] = (tagTotals[key] || 0) + rate * item.qty_hours;
+  });
+  const total = Object.values(tagTotals).reduce((a, b) => a + b, 0);
+  document.getElementById('totalPreview').value = `AU$ ${total.toFixed(2)}`;
+  const bd = document.getElementById('totalBreakdown');
+  const tags = Object.keys(tagTotals).filter(t => t);
+  if (tags.length > 0) {
+    let parts = [`General: AU$ ${(tagTotals[''] || 0).toFixed(2)}`];
+    let n = 0;
+    tags.sort().forEach(tag => {
+      n++;
+      parts.push(`${n}. ${tag}: AU$ ${tagTotals[tag].toFixed(2)}`);
+    });
+    bd.textContent = parts.join(' | ');
+  } else {
+    bd.textContent = '';
+  }
+}
+
+document.getElementById('hourlyRate').addEventListener('input', updateTotal);
+
+async function generateInvoice() {
+  if (!uploadedFile) { showToast('Upload a Toggl PDF first', 'error'); return; }
+
+  generateBtn.disabled = true;
+  generateBtn.textContent = 'Generating...';
+
+  const form = new FormData();
+  form.append('file', uploadedFile);
+  form.append('invoice_number', document.getElementById('invoiceNumber').value);
+  form.append('purchase_order', document.getElementById('purchaseOrder').value);
+
+  const doi = document.getElementById('dateOfIssue').value;
+  const dd = document.getElementById('dueDate').value;
+  form.append('date_of_issue', doi ? fmtDisplay(doi) : '');
+  form.append('due_date', dd ? fmtDisplay(dd) : '');
+  form.append('hourly_rate', document.getElementById('hourlyRate').value);
+  form.append('services_summary', document.getElementById('servicesSummary').value);
+
+  const descEdits = document.querySelectorAll('.desc-edit');
+  const overrides = {};
+  descEdits.forEach(el => {
+    const idx = el.getAttribute('data-index');
+    if (el.value !== parsedData.line_items[idx].description) {
+      overrides[idx] = el.value;
+    }
+  });
+  form.append('description_overrides', JSON.stringify(overrides));
+
+  try {
+    const res = await fetch('/generate', { method: 'POST', body: form });
+    if (!res.ok) {
+      const err = await res.json();
+      showToast(err.error || 'Generation failed', 'error');
+      return;
+    }
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const invNum = document.getElementById('invoiceNumber').value;
+    a.href = url;
+    a.download = invNum ? `Invoice_${invNum}.pdf` : 'Invoice.pdf';
+    a.click();
+    URL.revokeObjectURL(url);
+
+    showToast('Invoice downloaded!', 'success');
+    fireConfetti();
+  } catch (e) {
+    showToast('Failed to generate invoice', 'error');
+  } finally {
+    generateBtn.disabled = false;
+    generateBtn.textContent = 'Generate Invoice PDF';
+  }
+}
+
+function escapeHtml(str) {
+  const d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
+}
+
+// Toast
+function showToast(msg, type) {
+  const toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.className = `toast ${type} show`;
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => toast.classList.remove('show'), 3000);
+}
+
+// Confetti
+function fireConfetti() {
+  const canvas = document.getElementById('confetti');
+  const ctx = canvas.getContext('2d');
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+
+  const colors = ['#7c5cfc', '#5ce0d8', '#f59e0b', '#f87171', '#4ade80', '#a78bfa'];
+  const particles = [];
+
+  for (let i = 0; i < 120; i++) {
+    particles.push({
+      x: canvas.width / 2 + (Math.random() - 0.5) * 200,
+      y: canvas.height * 0.6,
+      vx: (Math.random() - 0.5) * 16,
+      vy: -Math.random() * 18 - 4,
+      w: Math.random() * 8 + 4,
+      h: Math.random() * 6 + 3,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      rot: Math.random() * Math.PI * 2,
+      rv: (Math.random() - 0.5) * 0.3,
+      life: 1,
+    });
+  }
+
+  let frame = 0;
+  function animate() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    let alive = false;
+    particles.forEach(p => {
+      if (p.life <= 0) return;
+      alive = true;
+      p.x += p.vx;
+      p.y += p.vy;
+      p.vy += 0.4;
+      p.vx *= 0.99;
+      p.rot += p.rv;
+      p.life -= 0.012;
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rot);
+      ctx.globalAlpha = p.life;
+      ctx.fillStyle = p.color;
+      ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+      ctx.restore();
+    });
+    if (alive && frame < 180) { frame++; requestAnimationFrame(animate); }
+    else ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+  animate();
+}
+</script>
+</body>
+</html>
