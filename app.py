@@ -309,16 +309,7 @@ def generate_invoice_pdf(
     pdf.cell(terms_w, 5, "TERMS", new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("Helvetica", "", 8)
     pdf.set_text_color(*DARK)
-    terms_text = ""
-    if services_summary:
-        terms_text += f"Services performed: {services_summary}.\n"
-    if date_range_start and date_range_end:
-        start_str = date_range_start.strftime("%B %-d, %Y")
-        end_str = date_range_end.strftime("%B %-d, %Y")
-        weeks = max(1, round((date_range_end - date_range_start).days / 7))
-        terms_text += f"{weeks} weeks of work completed between {start_str} - {end_str}"
-    if terms_text:
-        pdf.multi_cell(terms_w - 5, LH, terms_text)
+    pdf.multi_cell(terms_w - 5, LH, services_summary)
     y_after_terms = pdf.get_y()
 
     # Totals (right side)
