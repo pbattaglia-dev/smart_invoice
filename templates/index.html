@@ -225,7 +225,7 @@ header {
     <div class="stats" id="stats"></div>
     <div style="overflow-x: auto;">
       <table class="preview-table">
-        <thead><tr><th>Date</th><th>Description</th><th style="text-align:right">Hours</th></tr></thead>
+        <thead><tr><th>#</th><th>Description</th><th style="text-align:right">Hours</th></tr></thead>
         <tbody id="previewBody"></tbody>
       </table>
     </div>
@@ -328,7 +328,7 @@ async function handleFile(file) {
 function renderPreview(data) {
   stats.innerHTML = `
     <div class="stat"><strong>${data.entry_count}</strong> time entries</div>
-    <div class="stat"><strong>${data.line_items.length}</strong> work days</div>
+    <div class="stat"><strong>${data.line_items.length}</strong> tasks</div>
     <div class="stat"><strong>${data.total_hours}</strong> total</div>
     <div class="stat"><strong>${data.date_range_start || '?'}</strong> to <strong>${data.date_range_end || '?'}</strong></div>
   `;
@@ -336,6 +336,7 @@ function renderPreview(data) {
   previewBody.innerHTML = '';
   const seenTags = new Set();
   let tagNum = 0;
+  let itemId = 0;
   data.line_items.forEach((item, i) => {
     if (item.tag && !seenTags.has(item.tag)) {
       seenTags.add(item.tag);
@@ -349,10 +350,11 @@ function renderPreview(data) {
     const tr = document.createElement('tr');
     tr.style.animationDelay = `${i * 50}ms`;
     if (item.tag) tr.classList.add('content-row');
+    itemId++;
     const badge = item.tag ? `<span class="content-tag">${escapeHtml(item.tag)}</span>` : '';
     tr.innerHTML = `
-      <td style="white-space:nowrap; font-weight:500;">${item.date_label}${badge}</td>
-      <td class="desc-cell"><textarea class="desc-edit" data-index="${i}">${escapeHtml(item.description)}</textarea></td>
+      <td style="white-space:nowrap; color:var(--text2); font-size:12px;">${itemId}</td>
+      <td class="desc-cell"><textarea class="desc-edit" data-index="${i}">${escapeHtml(item.description)}</textarea>${badge}</td>
       <td class="num-cell">${item.qty_hours}</td>
     `;
     previewBody.appendChild(tr);

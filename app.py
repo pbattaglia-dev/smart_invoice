@@ -41,7 +41,6 @@ class TimeEntry:
 class InvoiceLineItem:
     description: str
     qty_hours: float
-    entry_date: date
     unit_cost: float
     tag: str = ""
 
@@ -49,16 +48,13 @@ class InvoiceLineItem:
     def amount(self):
         return round(self.unit_cost * self.qty_hours, 2)
 
-    @property
-    def date_label(self):
-        return self.entry_date.strftime("%a, %-d %b")
-
 
 def _clean_duration(text):
     return text.replace("\x00", ":")
 
 
 def _clean_description(text):
+    text = re.sub(r"\x00([^*\x00]+)\x00", r"*\1*", text)
     text = re.sub(r"\x00([^*\x00]+\*)", r"*\1", text)
     text = re.sub(r"([A-Z])\x00([A-Z])", r"\1-\2", text)
     text = text.replace("\x00", ":")
@@ -116,29 +112,23 @@ def _extract_tag(description):
     return m.group(1) if m else ""
 
 
-def group_entries_by_date(entries, hourly_rate):
-    by_date = defaultdict(list)
+def group_entries(entries, hourly_rate):
+    totals = defaultdict(int)
+    order = []
+    seen = set()
+
     for e in entries:
-        by_date[e.entry_date].append(e)
+        tag = _extract_tag(e.description)
+        key = (tag, e.description)
+        totals[key] += e.duration_seconds
+        if key not in seen:
+            seen.add(key)
+            order.append(key)
 
     tagged_buckets = defaultdict(list)
-    for d in sorted(by_date.keys()):
-        day_entries = by_date[d]
-        by_tag = defaultdict(list)
-        for e in day_entries:
-            by_tag[_extract_tag(e.description)].append(e)
-
-        for tag, group in by_tag.items():
-            descs = []
-            seen = set()
-            for e in group:
-                if e.description not in seen:
-                    descs.append(e.description)
-                    seen.add(e.description)
-            description = " / ".join(descs)
-            total_seconds = sum(e.duration_seconds for e in group)
-            qty = round(total_seconds / 3600, 2)
-            tagged_buckets[tag].append(InvoiceLineItem(description, qty, d, hourly_rate, tag))
+    for tag, desc in order:
+        qty = round(totals[(tag, desc)] / 3600, 2)
+        tagged_buckets[tag].append(InvoiceLineItem(desc, qty, hourly_rate, tag))
 
     result = tagged_buckets.pop("", [])
     for tag in sorted(tagged_buckets.keys()):
@@ -227,13 +217,15 @@ def generate_invoice_pdf(
     pdf.set_y(max(y1, y2) + 5)
 
     # -- Line items table --
-    desc_w = pw * 0.55
+    id_w = pw * 0.05
+    desc_w = pw * 0.50
     cost_w = pw * 0.13
     qty_w = pw * 0.12
     amt_w = pw * 0.20
 
     pdf.set_font("Helvetica", "B", 8)
     pdf.set_text_color(*GRAY)
+    pdf.cell(id_w, 6, "#", new_x="RIGHT")
     pdf.cell(desc_w, 6, "Description", new_x="RIGHT")
     pdf.cell(cost_w, 6, "Unit cost", align="R", new_x="RIGHT")
     pdf.cell(qty_w, 6, "QTY", align="R", new_x="RIGHT")
@@ -247,6 +239,7 @@ def generate_invoice_pdf(
 
     tags_seen = set()
     tag_number = 0
+    item_id = 0
 
     for item in line_items:
         if item.tag and item.tag not in tags_seen:
@@ -261,6 +254,7 @@ def generate_invoice_pdf(
             pdf.ln(1)
             pdf.set_font("Helvetica", "", 8)
             pdf.set_text_color(*DARK)
+        item_id += 1
         label = item.description
         num_lines = _count_lines(pdf, label, desc_w)
         row_h = LH * num_lines
@@ -271,6 +265,8 @@ def generate_invoice_pdf(
 
         y_row = pdf.get_y()
         pdf.set_xy(lm, y_row)
+        pdf.cell(id_w, LH, str(item_id))
+        pdf.set_xy(lm + id_w, y_row)
         pdf.multi_cell(desc_w, LH, label, align="L")
         y_after = pdf.get_y()
         actual_h = y_after - y_row
@@ -279,11 +275,11 @@ def generate_invoice_pdf(
         rate_str = str(int(hourly_rate)) if hourly_rate == int(hourly_rate) else f"{hourly_rate:.2f}"
         amt_str = f"{item.amount:.2f}" if item.amount != int(item.amount) else str(int(item.amount))
 
-        pdf.set_xy(lm + desc_w, mid_y)
+        pdf.set_xy(lm + id_w + desc_w, mid_y)
         pdf.cell(cost_w, LH, rate_str, align="R")
-        pdf.set_xy(lm + desc_w + cost_w, mid_y)
+        pdf.set_xy(lm + id_w + desc_w + cost_w, mid_y)
         pdf.cell(qty_w, LH, f"{item.qty_hours}", align="R")
-        pdf.set_xy(lm + desc_w + cost_w + qty_w, mid_y)
+        pdf.set_xy(lm + id_w + desc_w + cost_w + qty_w, mid_y)
         pdf.cell(amt_w, LH, amt_str, align="R")
 
         pdf.set_y(y_after + 0.5)
@@ -391,7 +387,7 @@ def parse():
     except Exception as e:
         return jsonify({"error": f"Failed to parse PDF: {e}"}), 400
 
-    grouped = group_entries_by_date(entries, 35)
+    grouped = group_entries(entries, 35)
 
     return jsonify({
         "date_range_start": start.isoformat() if start else None,
@@ -400,8 +396,6 @@ def parse():
         "entry_count": len(entries),
         "line_items": [
             {
-                "date": item.entry_date.isoformat(),
-                "date_label": item.date_label,
                 "description": item.description,
                 "qty_hours": item.qty_hours,
                 "tag": item.tag,
@@ -429,7 +423,7 @@ def generate():
     except Exception as e:
         return jsonify({"error": f"Failed to parse PDF: {e}"}), 400
 
-    line_items = group_entries_by_date(entries, hourly_rate)
+    line_items = group_entries(entries, hourly_rate)
 
     overrides_raw = request.form.get("description_overrides", "{}")
     try:
