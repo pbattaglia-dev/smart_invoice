@@ -134,13 +134,13 @@ header {
   font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px;
   color: var(--text2); font-weight: 600;
 }
-.form-group input, .form-group textarea {
+.form-group input, .form-group textarea, .form-group select {
   background: var(--surface2); border: 1px solid var(--border);
   border-radius: 8px; padding: 10px 12px; color: var(--text);
   font-size: 14px; font-family: inherit;
   transition: border-color 0.2s;
 }
-.form-group input:focus, .form-group textarea:focus {
+.form-group input:focus, .form-group textarea:focus, .form-group select:focus {
   outline: none; border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--glow);
 }
@@ -234,6 +234,16 @@ header {
   <div class="section" id="configSection">
     <div class="section-title">Invoice Details</div>
     <div class="form-grid">
+      {% if configs|length > 1 %}
+      <div class="form-group full">
+        <label>Invoice Profile</label>
+        <select id="configIndex">
+          {% for cfg in configs %}
+          <option value="{{ cfg.index }}">{{ cfg.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endif %}
       <div class="form-group">
         <label>Invoice Number</label>
         <input type="text" id="invoiceNumber" placeholder="e.g. 052026">
@@ -425,6 +435,8 @@ async function generateInvoice() {
   form.append('file', uploadedFile);
   form.append('invoice_number', document.getElementById('invoiceNumber').value);
   form.append('purchase_order', document.getElementById('purchaseOrder').value);
+  const configSelect = document.getElementById('configIndex');
+  form.append('config_index', configSelect ? configSelect.value : '0');
 
   const doi = document.getElementById('dateOfIssue').value;
   const dd = document.getElementById('dueDate').value;

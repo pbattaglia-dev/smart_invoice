@@ -21,13 +21,21 @@ def _load_config():
         print("Copy config.example.json to config.json and fill in your details.")
         sys.exit(1)
     with open(path) as f:
-        return json.load(f)
+        data = json.load(f)
+    # Support both a single config object (legacy) and a list of configs.
+    if isinstance(data, dict):
+        data = [data]
+    if not data:
+        print("ERROR: config.json contains no configurations.")
+        sys.exit(1)
+    return data
 
 
-CONFIG = _load_config()
-BILLED_TO = CONFIG["billed_to"]
-FROM = CONFIG["from"]
-BANK = CONFIG["bank"]
+def _config_label(config, index):
+    return config.get("label") or config.get("billed_to", {}).get("company") or f"Config {index + 1}"
+
+
+CONFIGS = _load_config()
 
 
 @dataclass
@@ -166,7 +174,12 @@ def generate_invoice_pdf(
     services_summary,
     date_range_start,
     date_range_end,
+    config,
 ):
+    billed_to = config["billed_to"]
+    from_info = config["from"]
+    bank = config["bank"]
+
     pdf = InvoicePDF()
     pdf.add_page()
     lm = pdf.l_margin
@@ -207,10 +220,10 @@ def generate_invoice_pdf(
     pdf.set_text_color(*DARK)
     y_start = pdf.get_y()
 
-    pdf.multi_cell(col_w, LH, f"{BILLED_TO['company']}\n{BILLED_TO['region']}\n{BILLED_TO['email']}")
+    pdf.multi_cell(col_w, LH, f"{billed_to['company']}\n{billed_to['region']}\n{billed_to['email']}")
     y1 = pdf.get_y()
     pdf.set_xy(lm + col_w, y_start)
-    pdf.multi_cell(col_w, LH, f"{FROM['name']}\nABN: {FROM['abn']}\n{FROM['address1']}\n{FROM['address2']}\n{FROM['postcode']}")
+    pdf.multi_cell(col_w, LH, f"{from_info['name']}\nABN: {from_info['abn']}\n{from_info['address1']}\n{from_info['address2']}\n{from_info['postcode']}")
     y2 = pdf.get_y()
     pdf.set_xy(lm + 2 * col_w, y_start)
     pdf.cell(col_w, LH, purchase_order or "")
@@ -352,9 +365,9 @@ def generate_invoice_pdf(
     pdf.set_text_color(*DARK)
     pdf.cell(pw, 5, "BANK ACCOUNT DETAILS", new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("Helvetica", "", 8)
-    pdf.cell(pw, LH, BANK["name"], new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(pw, LH, f"BSB {BANK['bsb']}", new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(pw, LH, f"Account {BANK['account']}", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(pw, LH, bank["name"], new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(pw, LH, f"BSB {bank['bsb']}", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(pw, LH, f"Account {bank['account']}", new_x="LMARGIN", new_y="NEXT")
 
     buf = io.BytesIO()
     pdf.output(buf)
@@ -364,7 +377,8 @@ def generate_invoice_pdf(
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    configs = [{"index": i, "label": _config_label(c, i)} for i, c in enumerate(CONFIGS)]
+    return render_template("index.html", configs=configs)
 
 
 @app.route("/parse", methods=["POST"])
@@ -410,6 +424,14 @@ def generate():
     services_summary = request.form.get("services_summary", "")
 
     try:
+        config_index = int(request.form.get("config_index", "0"))
+    except ValueError:
+        config_index = 0
+    if not 0 <= config_index < len(CONFIGS):
+        return jsonify({"error": "Invalid config selection"}), 400
+    config = CONFIGS[config_index]
+
+    try:
         entries, start, end, _ = parse_toggl_pdf(f.stream)
     except Exception as e:
         return jsonify({"error": f"Failed to parse PDF: {e}"}), 400
@@ -436,6 +458,7 @@ def generate():
         services_summary=services_summary,
         date_range_start=start,
         date_range_end=end,
+        config=config,
     )
 
     filename = f"Invoice_{invoice_number}.pdf" if invoice_number else "Invoice.pdf"
