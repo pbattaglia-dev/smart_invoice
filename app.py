@@ -120,7 +120,25 @@ def _extract_tag(description):
     return m.group(1) if m else ""
 
 
-def group_entries(entries, hourly_rate):
+def _format_date_label(d):
+    return f"{d.day} {d.strftime('%B')} {d.year}"
+
+
+def group_entries(entries, hourly_rate, group_by="category"):
+    """Group time entries into invoice line items.
+
+    ``group_by="category"`` buckets by the *tag* embedded in each description
+    (the default). ``group_by="date"`` buckets by the entry's date instead, so
+    each section header is a day (e.g. "9 May 2026") rather than a category.
+    In both cases the bucket label is stored on ``InvoiceLineItem.tag`` and
+    drives the section headers and totals breakdown downstream.
+    """
+    if group_by == "date":
+        return _group_by_date(entries, hourly_rate)
+    return _group_by_category(entries, hourly_rate)
+
+
+def _group_by_category(entries, hourly_rate):
     totals = defaultdict(int)
     order = []
     seen = set()
@@ -141,6 +159,30 @@ def group_entries(entries, hourly_rate):
     result = tagged_buckets.pop("", [])
     for tag in sorted(tagged_buckets.keys()):
         result.extend(tagged_buckets[tag])
+    return result
+
+
+def _group_by_date(entries, hourly_rate):
+    totals = defaultdict(int)
+    order = []
+    seen = set()
+
+    for e in entries:
+        key = (e.entry_date, e.description)
+        totals[key] += e.duration_seconds
+        if key not in seen:
+            seen.add(key)
+            order.append(key)
+
+    date_buckets = defaultdict(list)
+    for entry_date, desc in order:
+        qty = round(totals[(entry_date, desc)] / 3600, 2)
+        label = _format_date_label(entry_date)
+        date_buckets[entry_date].append(InvoiceLineItem(desc, qty, hourly_rate, label))
+
+    result = []
+    for entry_date in sorted(date_buckets.keys()):
+        result.extend(date_buckets[entry_date])
     return result
 
 
@@ -175,6 +217,7 @@ def generate_invoice_pdf(
     date_range_start,
     date_range_end,
     config,
+    group_by="category",
 ):
     billed_to = config["billed_to"]
     from_info = config["from"]
@@ -261,7 +304,8 @@ def generate_invoice_pdf(
             pdf.ln(2)
             pdf.set_font("Helvetica", "B", 8)
             pdf.set_text_color(*GRAY)
-            pdf.cell(desc_w, 6, f"{tag_number}. {item.tag.upper()}", new_x="LMARGIN", new_y="NEXT")
+            tag_label = item.tag if group_by == "date" else item.tag.upper()
+            pdf.cell(desc_w, 6, f"{tag_number}. {tag_label}", new_x="LMARGIN", new_y="NEXT")
             pdf.set_draw_color(200, 200, 200)
             pdf.line(lm, pdf.get_y(), lm + pw, pdf.get_y())
             pdf.ln(1)
@@ -304,8 +348,13 @@ def generate_invoice_pdf(
     pdf.ln(5)
 
     tag_totals = defaultdict(float)
+    group_order = []
+    seen_groups = set()
     for item in line_items:
         tag_totals[item.tag] += item.amount
+        if item.tag not in seen_groups:
+            seen_groups.add(item.tag)
+            group_order.append(item.tag)
     total = sum(tag_totals.values())
 
     # -- Terms + totals side by side --
@@ -335,13 +384,17 @@ def generate_invoice_pdf(
         pdf.cell(val_w, 5.5, value, align="R", new_x="LMARGIN", new_y="NEXT")
 
     pdf.set_xy(lm + terms_w, y_section)
-    has_tags = any(tag for tag in tag_totals if tag)
+    has_tags = any(group_order)
     if has_tags:
-        _total_row("GENERAL", f"AU$ {tag_totals.get('', 0):,.2f}")
+        if "" in tag_totals:
+            _total_row("GENERAL", f"AU$ {tag_totals['']:,.2f}")
         tag_num = 0
-        for tag in sorted(t for t in tag_totals if t):
+        for tag in group_order:
+            if not tag:
+                continue
             tag_num += 1
-            _total_row(f"{tag_num}. {tag.upper()}", f"AU$ {tag_totals[tag]:,.2f}")
+            tag_label = tag if group_by == "date" else tag.upper()
+            _total_row(f"{tag_num}. {tag_label}", f"AU$ {tag_totals[tag]:,.2f}")
     else:
         _total_row("SUBTOTAL", f"AU$ {total:,.2f}")
     _total_row("(TAX RATE)", "0 %")
@@ -387,18 +440,23 @@ def parse():
     if not f:
         return jsonify({"error": "No file uploaded"}), 400
 
+    group_by = request.form.get("group_by", "category")
+    if group_by not in ("category", "date"):
+        group_by = "category"
+
     try:
         entries, start, end, total_hours = parse_toggl_pdf(f.stream)
     except Exception as e:
         return jsonify({"error": f"Failed to parse PDF: {e}"}), 400
 
-    grouped = group_entries(entries, 35)
+    grouped = group_entries(entries, 35, group_by)
 
     return jsonify({
         "date_range_start": start.isoformat() if start else None,
         "date_range_end": end.isoformat() if end else None,
         "total_hours": total_hours,
         "entry_count": len(entries),
+        "group_by": group_by,
         "line_items": [
             {
                 "description": item.description,
@@ -422,6 +480,9 @@ def generate():
     hourly_rate = float(request.form.get("hourly_rate", "35"))
     purchase_order = request.form.get("purchase_order", "")
     services_summary = request.form.get("services_summary", "")
+    group_by = request.form.get("group_by", "category")
+    if group_by not in ("category", "date"):
+        group_by = "category"
 
     try:
         config_index = int(request.form.get("config_index", "0"))
@@ -436,7 +497,7 @@ def generate():
     except Exception as e:
         return jsonify({"error": f"Failed to parse PDF: {e}"}), 400
 
-    line_items = group_entries(entries, hourly_rate)
+    line_items = group_entries(entries, hourly_rate, group_by)
 
     overrides_raw = request.form.get("description_overrides", "{}")
     try:
@@ -459,6 +520,7 @@ def generate():
         date_range_start=start,
         date_range_end=end,
         config=config,
+        group_by=group_by,
     )
 
     filename = f"Invoice_{invoice_number}.pdf" if invoice_number else "Invoice.pdf"

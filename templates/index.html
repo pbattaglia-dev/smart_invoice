@@ -84,6 +84,27 @@ header {
   font-size: 13px; font-weight: 600; text-transform: uppercase;
   letter-spacing: 0.5px; color: var(--text2); margin-bottom: 16px;
 }
+.section-title.row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+
+/* Sort mode toggle */
+.sort-toggle {
+  display: inline-flex; background: var(--surface2);
+  border: 1px solid var(--border); border-radius: 8px; padding: 2px;
+}
+.sort-toggle button {
+  border: none; background: transparent; cursor: pointer;
+  font: inherit; font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.4px;
+  color: var(--text2); padding: 6px 12px; border-radius: 6px;
+  transition: all 0.2s;
+}
+.sort-toggle button.active {
+  background: var(--surface); color: var(--text);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+.sort-toggle button:disabled { cursor: not-allowed; opacity: 0.6; }
 
 /* Preview table */
 .preview-table {
@@ -221,7 +242,13 @@ header {
   </div>
 
   <div class="section" id="previewSection">
-    <div class="section-title">Parsed Time Entries</div>
+    <div class="section-title row">
+      <span>Parsed Time Entries</span>
+      <div class="sort-toggle" id="sortToggle">
+        <button type="button" data-mode="category" class="active" onclick="setSortMode('category')">By category</button>
+        <button type="button" data-mode="date" onclick="setSortMode('date')">By date</button>
+      </div>
+    </div>
     <div class="stats" id="stats"></div>
     <div style="overflow-x: auto;">
       <table class="preview-table">
@@ -298,6 +325,7 @@ const generateBtn = document.getElementById('generateBtn');
 
 let uploadedFile = null;
 let parsedData = null;
+let sortMode = 'category';
 
 // Drag and drop
 ['dragenter', 'dragover'].forEach(e => {
@@ -319,9 +347,15 @@ async function handleFile(file) {
   uploadedFile = file;
   fileName.textContent = file.name;
   dropZone.classList.add('has-file');
+  await parseFile(true);
+}
+
+async function parseFile(showSuccess) {
+  if (!uploadedFile) return;
 
   const form = new FormData();
-  form.append('file', file);
+  form.append('file', uploadedFile);
+  form.append('group_by', sortMode);
 
   try {
     const res = await fetch('/parse', { method: 'POST', body: form });
@@ -329,10 +363,19 @@ async function handleFile(file) {
     if (data.error) { showToast(data.error, 'error'); return; }
     parsedData = data;
     renderPreview(data);
-    showToast('PDF parsed successfully!', 'success');
+    if (showSuccess) showToast('PDF parsed successfully!', 'success');
   } catch (e) {
     showToast('Failed to parse PDF', 'error');
   }
+}
+
+function setSortMode(mode) {
+  if (mode === sortMode) return;
+  sortMode = mode;
+  document.querySelectorAll('#sortToggle button').forEach(b => {
+    b.classList.toggle('active', b.dataset.mode === mode);
+  });
+  if (uploadedFile) parseFile(false);
 }
 
 function renderPreview(data) {
@@ -353,7 +396,8 @@ function renderPreview(data) {
       tagNum++;
       const sep = document.createElement('tr');
       sep.className = 'section-separator';
-      sep.innerHTML = `<td colspan="3" style="padding:12px 8px 6px; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.4px; color:var(--text2); border-bottom:2px solid var(--accent);">${tagNum}. ${escapeHtml(item.tag.toUpperCase())}</td>`;
+      const headerLabel = sortMode === 'date' ? escapeHtml(item.tag) : escapeHtml(item.tag.toUpperCase());
+      sep.innerHTML = `<td colspan="3" style="padding:12px 8px 6px; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.4px; color:var(--text2); border-bottom:2px solid var(--accent);">${tagNum}. ${headerLabel}</td>`;
       sep.style.animationDelay = `${i * 50}ms`;
       previewBody.appendChild(sep);
     }
@@ -361,7 +405,7 @@ function renderPreview(data) {
     tr.style.animationDelay = `${i * 50}ms`;
     if (item.tag) tr.classList.add('content-row');
     itemId++;
-    const badge = item.tag ? `<span class="content-tag">${escapeHtml(item.tag)}</span>` : '';
+    const badge = (item.tag && sortMode !== 'date') ? `<span class="content-tag">${escapeHtml(item.tag)}</span>` : '';
     tr.innerHTML = `
       <td style="white-space:nowrap; color:var(--text2); font-size:12px;">${itemId}</td>
       <td class="desc-cell"><textarea class="desc-edit" data-index="${i}">${escapeHtml(item.description)}</textarea>${badge}</td>
@@ -401,20 +445,21 @@ function updateTotal() {
   if (!parsedData) return;
   const rate = parseFloat(document.getElementById('hourlyRate').value) || 0;
   const tagTotals = {};
+  const groupOrder = [];
   parsedData.line_items.forEach(item => {
     const key = item.tag || '';
+    if (!(key in tagTotals)) groupOrder.push(key);
     tagTotals[key] = (tagTotals[key] || 0) + rate * item.qty_hours;
   });
   const total = Object.values(tagTotals).reduce((a, b) => a + b, 0);
   document.getElementById('totalPreview').value = `AU$ ${total.toFixed(2)}`;
   const bd = document.getElementById('totalBreakdown');
-  const tags = Object.keys(tagTotals).filter(t => t);
+  const tags = groupOrder.filter(t => t);
   if (tags.length > 0) {
-    let parts = [`General: AU$ ${(tagTotals[''] || 0).toFixed(2)}`];
-    let n = 0;
-    tags.sort().forEach(tag => {
-      n++;
-      parts.push(`${n}. ${tag}: AU$ ${tagTotals[tag].toFixed(2)}`);
+    let parts = [];
+    if ('' in tagTotals) parts.push(`General: AU$ ${tagTotals[''].toFixed(2)}`);
+    tags.forEach((tag, n) => {
+      parts.push(`${n + 1}. ${tag}: AU$ ${tagTotals[tag].toFixed(2)}`);
     });
     bd.textContent = parts.join(' | ');
   } else {
@@ -444,6 +489,7 @@ async function generateInvoice() {
   form.append('due_date', dd ? fmtDisplay(dd) : '');
   form.append('hourly_rate', document.getElementById('hourlyRate').value);
   form.append('services_summary', document.getElementById('servicesSummary').value);
+  form.append('group_by', sortMode);
 
   const descEdits = document.querySelectorAll('.desc-edit');
   const overrides = {};
